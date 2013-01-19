@@ -20,15 +20,15 @@ You'll need your Steam ID from the wishlist URL:
     http://steamcommunity.com/profiles/[this_one]/wishlist
 
 
-steamwishes.py
+steamwishlist.py
 ================
 
 An other python script for retrieving the most wanted game in your friend's wishlists.
 
 Usage
 
-    $ python steamwishes.py
-    usage: steamwishes.py steam_id
+    $ python steamwishlist.py
+    usage: steamwishlist.py steam_id
 
 You'll need your Steam ID from the wishlist URL:
 
