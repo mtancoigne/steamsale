@@ -6,10 +6,12 @@ A script that search for the most wanted games (wishlist) of a steam user's frie
 
 Work based on the script of Martin Polden (https://github.com/martinp/steamsale)
 
-@todo : use the script for a given group id (fetch the members)
-@todo : use the script on a given text list of users
-@todo : integrate the original script by Martin Polden to display discounts on items
+The group part of the script don't search on multiple pages so it's designed for small groups for now.
 
+@todo : use the script on a given text list of users    
+@todo : integrate the original script by Martin Polden to display discounts on items
+    and make a single script.
+@todo : verbose and nonverbose version.
 """
 
 import sys
@@ -77,23 +79,54 @@ class Friends(object):
             name = friend_tag.find(attrs={'class': re.compile('linkFriend_(offline|online|in-game)')}).text
             uid= self._find_friend_id()
             self.friends.append({'uid':uid, 'name':name})
-
         return self.friends
 
+class GroupMembers(object):
+    """ Class representing a group members list"""
+    def __init__(self, group_id):
+        url = 'http://steamcommunity.com/groups/%s/members' % group_id
+        req = requests.get(url)
+        self.soup = BeautifulSoup(req.content, convertEntities=BeautifulSoup.HTML_ENTITIES)
+        self.tag = None
+        self.members = []
+        
+    def _find_member_id(self):
+        """Returns the Id, digitalized or not """
+        url = self.tag.find(attrs={'class': "linkFriend"})
+        href = url.attrMap['href'] if url and 'href' in url.attrMap else None
+        return search("(.*)/(.*)", href).group(2);
+        
+    def find_members(self):
+        """ Find divs containing members blocks """
+        member_tags = self.soup.findAll("div", attrs={'class' : re.compile('member_block_content\s')})
+        for member_tag in member_tags:
+            self.tag = member_tag.find('div')
+            name = member_tag.find(attrs={'class': 'linkFriend'}).text
+            uid= self._find_member_id()
+            self.members.append({'uid':uid, 'name':name})
+        return self.members
+    
 def usage():
     """ Display usage """
     print ('==================================================================')
     print ('This script parses a steam user profile, find friends associated')
     print ('with this user, and their respective wishlists.')
     print ('==================================================================')
-    print ('Usage: %s steam_id') % sys.argv[0]
+    print ('Usage: %s [OPTIONS] steam_id'
+    '\n -h, --help\t\tDisplay usage'
+    '\n -g, --group\t\tGroup search'
+    '\n -m, --min=x\t\tGame must be on x wishlists to be shown. X as int'
+    '\n steam_id \t The group id or member id'
+    '\n\n Group id : \n http://steamcommunity.com/groups/[group_id]'
+    '\n User id:'
+    '\n http://steamcommunity.com/profiles/[user_id]'
+    '\n http://steamcommunity.com/id/[user_id]') % sys.argv[0]
     sys.exit(1)
-
-
+    
 def main():
     """ Parse argv, find items and print them to stdout """
     try:
-        opts, args = getopt(sys.argv[1:],'hdsp:c')
+        opts, args = getopt(sys.argv[1:],'hgm:', ['help', 'group', 'min='])
     except GetoptError, err:
         print str(err)
         usage()
@@ -102,20 +135,39 @@ def main():
         usage()
         
     steam_id = args[0]
-    """ First, we search for all friends"""
-    print ('Searching for friends...')
-    friends = Friends(steam_id)
-    friends_list = friends.find_friends()
+    group_only=False
+    users_list={}
     wanted_games=[] #List of games wanted by people
     games_list={}   #Dict with more infos on it
     n_games_list={} #List of game_id : wanted count
-    print ('--- You have %s friend(s)') % len(friends_list)
+    min_games=2
+    
+    for opt, arg in opts:
+        if opt in ('-h', '--help'):
+            usage()
+        elif opt in ('-g', '--group'):
+            """Group Search"""
+            group_only = True
+            group_id=args[0]
+        elif opt in ('-m','--min'):
+            min_games=int(arg)
+            print ('Only games wanted by more than %d people will be shown') % min_games
+            
+    if (group_only==True):
+        print "Searching for group members..."
+        users = GroupMembers(steam_id)
+        users_list = users.find_members()
+        print ('--- There is %s member(s) in this group') % len(users_list)
+    else:
+        print ('Searching for friends...')
+        users = Friends(steam_id)
+        users_list = users.find_friends()
+        print ('--- You have %s friend(s)') % len(users_list)
     print
-    print ('Fetching all of your friends wishlists')
-
-
+    print ('Fetching all people wishlists')
 #    i=0
-    for (key) in friends_list:
+
+    for (key) in users_list:
 ## uncomment this part if you want to test the script on a little set of people
 ## Also uncomment the i=0 above.
 #        if(i<5):
@@ -125,9 +177,14 @@ def main():
 #            i=i+1
 ## comment this part if you want to test the script on a little set of people
         wishlist = Wishlist(key['uid'], key['name'])
-        wanted_games.extend(wishlist.find_items())
-        print ('... %s done') % key['name']
-            
+        user_wanted_games=wishlist.find_items()
+        wanted_games.extend(user_wanted_games)
+##        if(len(user_wanted_games)==0):
+##            print ('... %s have no game in his/her wishlist. The profile may be private.') % key['name']
+##        else:
+        print ('... %s') % (key['name']).ljust(30),
+        print str(len(user_wanted_games)).rjust(3)
+
     print ('--- All lists retrieved')
     print
     print ('Doing list stuff :')
@@ -142,11 +199,11 @@ def main():
     print ('--- There is %d differents games in the wishlists') % len(games_list)
     print
     
-    """ Creating a reference list for games wanted  >= 2 people """
+    """ Creating a reference list for games wanted  >= min_games people """
     print ('Deleting one shot games')
     i=0
     for key in games_list:
-        if games_list[key]['count']>=2 :
+        if games_list[key]['count']>=min_games :
             n_games_list[key]=games_list[key]['count']
         else: i+=1
     print ('--- %d game(s) removed from list') % i
